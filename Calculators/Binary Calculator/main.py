@@ -7,7 +7,7 @@ print(f"Unsplit: {num1}\nSplit: {num1Split}")
 
 def addBinary(num1, num2):
     for i in range(len(num1)):
-        print(i)
-        print(f"Index: {-i - 1}, Char: {[*num1][-i]}")
+        for j in range(len(num2)):
+            pass
 
 addBinary(num1, num2)
