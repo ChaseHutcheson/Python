@@ -1,43 +1,37 @@
 import pygame
 
-# pygame setup
+# Initialize pygame
 pygame.init()
 screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
 running = True
-dt = 0
 
-player_pos = pygame.Vector2(screen.get_width() / 2, screen.get_height() / 2)
+# Variables for tracking mouse clicks
+click_counter = 0
+start_pos = None
 
+# Main loop
 while running:
-    # poll for events
-    # pygame.QUIT event means the user clicked X to close your window
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-
-    # fill the screen with a color to wipe away anything from last frame
-    screen.fill("purple")
-
-    pygame.display.set_caption(str(dt))
-    pygame.draw.circle(screen, "red", player_pos, 40)
-
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_w]:
-        player_pos.y -= 300 * dt
-    if keys[pygame.K_s]:
-        player_pos.y += 300 * dt
-    if keys[pygame.K_a]:
-        player_pos.x -= 300 * dt
-    if keys[pygame.K_d]:
-        player_pos.x += 300 * dt
-
-    # flip() the display to put your work on screen
+        
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if click_counter == 0:
+                # Store the start position of the line
+                start_pos = event.pos
+                click_counter += 1
+            elif click_counter == 1:
+                # Draw the line from the start position to the end position
+                end_pos = event.pos
+                pygame.draw.line(screen, (255, 255, 255), start_pos, end_pos, 2)
+                # Reset click counter
+                click_counter = 0
+    
+    # Update the display
     pygame.display.flip()
-
-    # limits FPS to 60
-    # dt is delta time in seconds since last frame, used for framerate-
-    # independent physics.
-    dt = clock.tick(60) / 1000
+    
+    # Cap the frame rate to 60 frames per second
+    clock.tick(60)
 
 pygame.quit()
