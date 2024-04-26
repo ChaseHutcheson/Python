@@ -132,6 +132,13 @@ while running:
     # RENDER GAME
     screen.fill(settings.screen_color)
 
+    # Menu Bar
+    pygame.draw.rect(
+        surface=screen,
+        color=settings.get_colors()["Gray"],
+        rect=pygame.Rect(0, 0, settings.screen_size[0], 60),
+    )
+
     # Line Preview
     if click_counter == 0:
         line_end_pos = pygame.mouse.get_pos()
