@@ -1,199 +1,283 @@
-import math
 import pygame
-from settings import Settings
+import math
+import sys
 
-# Program Setup
+# Pygame initialization
 pygame.init()
 
-# Settings
-settings = Settings((1280, 720), (25, 25, 25), 10)
-
-# Screen
-screen = pygame.display.set_mode((1280, 720))
-pygame.display.set_caption("Circuit Simulator")
+# Window settings
+WIDTH, HEIGHT = 900, 700
+win = pygame.display.set_mode((WIDTH, HEIGHT))
 
 # Colors
-colors = Settings.get_colors()
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+YELLOW = (255, 255, 0)
+DRAWING_BACKGROUND = (50, 50, 50)
+TOOLBAR_BACKGROUND = (70, 70, 70)
+BUTTON_OUTLINE = (100, 100, 100)
+BUTTON_BACKGROUND = (150, 150, 150)
+GRAY = (200, 200, 200)
 
-# Line Drawing
-line_start_pos = None
-line_end_pos = None
+# Toolbar settings
+TOOLBAR_WIDTH = WIDTH // 5
+TOOLBAR_HEIGHT = HEIGHT
+toolbar_rect = pygame.Rect(0, 0, TOOLBAR_WIDTH, TOOLBAR_HEIGHT)
+
+# Drawing settings
+drawing = False
+mode = "light"
+
+# Button settings
+BUTTON_WIDTH = TOOLBAR_WIDTH // 1.2
+BUTTON_HEIGHT = 50
+BUTTON_MARGIN = 10
+
+# Global variables
 lines = []
-connected_lines = []
-click_counter = 0
-clock = pygame.time.Clock()
-running = True
-snap_radius = settings.snap_radius
-snap_horizontal = False  # Initialize snap_horizontal
-snap_vertical = False  # Initialize snap_vertical
+current_line = None
 
 
-# Util Functions
-# Function calculates distances between points
-def distance(point1, point2):
-    return math.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
-
-
-# Function to snap lines to others while in preview mode
-def snap_lines(lines, point):
-    closest_distance = settings.snap_radius
-    closest_end = None
-    closest_line_index = None
-
-    for index, line in enumerate(lines):
-        for line_end in line:
-            dist = distance(point, line_end)
-            # Check if the distance is within the snap radius and not directly under the line end
-            if dist < closest_distance:
-                closest_distance = dist
-                closest_end = line_end
-                closest_line_index = index
-
-    return closest_end, closest_line_index
-
-
-def snap_lines_start(lines, point):
-    closest_distance = 50
-    closest_end = None
-
-    for index, line in enumerate(lines):
-        for line_end in line:
-            dist = distance(point, line_end)
-            # Check if the distance is within the snap radius and not directly under the line end
-            if dist < closest_distance:
-                closest_end = line_end
-
-    return closest_end
-
-
-def are_lines_connected(line1, line2):
-    # Check if the endpoints of line1 match the endpoints of line2
-    if (
-        line1[0] == line2[0]
-        or line1[0] == line2[1]
-        or line1[1] == line2[0]
-        or line1[1] == line2[1]
-    ):
-        return True
-    else:
-        return False
-
-
-def save_line(lines: list[tuple[int, int]], coords: tuple[int, int]):
-    lines.append([coords[0], coords[1]])
-
-
-while running:
-    # GAME LOGIC
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if click_counter == 0:
-                # Check to see if cursor is snapped to line
-                closest_end = snap_lines_start(lines, line_end_pos)
-                if closest_end is not None:
-                    line_start_pos = closest_end
-                else:
-                    line_start_pos = pygame.mouse.get_pos()
-                click_counter += 1
-            elif click_counter == 1:
-                # Snap the line end to nearby lines if applicable
-                closest_end, _ = snap_lines(lines, line_end_pos)
-                if closest_end is not None:
-                    line_end_pos = closest_end
-                    save_line(lines=lines, coords=(line_start_pos, line_end_pos))
-                    connected_lines.append((line_start_pos, line_end_pos))
-                    click_counter = 0
-                else:
-                    save_line(lines=lines, coords=(line_start_pos, line_end_pos))
-                    click_counter = 0
-        elif event.type == pygame.KEYDOWN:
-            # Undo Shortcut
-            if event.key == pygame.K_z and (event.mod & pygame.KMOD_CTRL):
-                if lines:
-                    lines.pop(-1)
-            # Vertical and Horizontal snap shortcut
-            if event.key == pygame.K_LSHIFT:
-                snap_horizontal = True
-                snap_vertical = False
-            elif event.key == pygame.K_LCTRL:
-                snap_horizontal = False
-                snap_vertical = True
-        elif event.type == pygame.KEYUP:
-            # Release the snap
-            if event.key == pygame.K_LSHIFT:
-                snap_horizontal = False
-                snap_vertical = False
-            if event.key == pygame.K_LCTRL:
-                snap_horizontal = False
-                snap_vertical = False
-
-    # RENDER GAME
-    screen.fill(settings.screen_color)
-
-    # Menu Bar
-    pygame.draw.rect(
-        surface=screen,
-        color=settings.get_colors()["Gray"],
-        rect=pygame.Rect(0, 0, settings.screen_size[0], 60),
+# Utils
+def intersect(line1, line2):
+    x1, y1 = line1.start_pos
+    x2, y2 = (
+        line1.end_pos
+        if hasattr(line1, "end_pos") and line1.end_pos
+        else line1.extend_to_edge()
     )
+    x3, y3 = line2.start_pos
+    x4, y4 = line2.end_pos
 
-    # Line Preview
-    if click_counter == 0:
-        line_end_pos = pygame.mouse.get_pos()
+    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if denom == 0:
+        return None  # Lines are parallel
 
-        # Snap the line end to nearby lines if applicable
-        closest_end = snap_lines_start(lines, line_end_pos)
+    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
+    u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
 
-        if closest_end is not None:
-            # Draw the circle at the position of closest_end
-            pygame.draw.circle(
-                surface=screen,
-                color=settings.get_colors()["Purple"],
-                center=closest_end,  # Draw the circle at the position of closest_end
-                radius=10,
-            )
+    if 0 <= t <= 1 and 0 <= u:
+        return x1 + t * (x2 - x1), y1 + t * (y2 - y1)  # Return intersection point
+    else:
+        return None
+
+
+# Classes
+class Light:
+    def __init__(self, start_pos, screen_size, generation=0):
+        self.start_pos = start_pos
+        self.end_pos = None
+        self.screen_size = screen_size
+        self.angle = 0
+        self.length = 0
+        self.generation = generation
+
+    def draw(self, surface):
+        end_pos = self.end_pos if self.end_pos else self.extend_to_edge()
+        pygame.draw.line(surface, YELLOW, self.start_pos, end_pos, 2)
+
+    def rotate(self, angle):
+        self.angle += angle
+        self.angle %= 2 * math.pi  # Ensure angle remains within [0, 2*pi]
+
+    def is_clicked(self, mouse_pos):
+        end_pos = self.extend_to_edge()
+        distance_to_start = math.dist(self.start_pos, mouse_pos)
+        distance_to_end = math.dist(end_pos, mouse_pos)
+        return abs(distance_to_start + distance_to_end - self.length) < 5
+
+    def extend_to_edge(self):
+        dx = math.cos(self.angle)
+        dy = math.sin(self.angle)
+        x = self.start_pos[0]
+        y = self.start_pos[1]
+        while 0 <= x <= self.screen_size[0] and 0 <= y <= self.screen_size[1]:
+            x += dx
+            y += dy
+        return (x, y)
+
+    def update_end_pos(self, end_pos, intersection_point=None):
+        if intersection_point:
+            self.end_pos = intersection_point
         else:
-            # Draw the circle at the mouse position when no closest end is found
-            pygame.draw.circle(
-                surface=screen,
-                color=settings.get_colors()["Purple"],
-                center=line_end_pos,  # Draw the circle at the current mouse position
-                radius=10,
-            )
+            self.end_pos = end_pos
 
-    if click_counter == 1:
-        line_end_pos = pygame.mouse.get_pos()
 
-        # Snap the line end to nearby lines if applicable
-        closest_end, _ = snap_lines(lines, line_end_pos)
-        if closest_end is not None:
-            line_end_pos = closest_end
+class Mirror:
+    def __init__(self, start_pos, end_pos):
+        self.start_pos = start_pos
+        self.end_pos = end_pos
+        self.dx = self.end_pos[0] - self.start_pos[0]
+        self.dy = self.end_pos[1] - self.start_pos[1]
+        self.length = math.hypot(self.dx, self.dy)
+        self.angle = math.atan2(self.dy, self.dx)
 
-        # Check if Shift key is held down to enforce vertical or horizontal line
-        if snap_horizontal:
-            line_end_pos = (line_end_pos[0], line_start_pos[1])
-        elif snap_vertical:
-            line_end_pos = (line_start_pos[0], line_end_pos[1])
+    def update(self, end_pos):
+        self.end_pos = end_pos
+        self.dx = self.end_pos[0] - self.start_pos[0]
+        self.dy = self.end_pos[1] - self.start_pos[1]
+        self.length = math.hypot(self.dx, self.dy)
+        self.angle = math.atan2(self.dy, self.dx)
 
-        pygame.draw.line(screen, (155, 155, 155), line_start_pos, line_end_pos, 2)
+    def draw(self, surface):
+        pygame.draw.line(surface, GRAY, self.start_pos, self.end_pos, 10)
 
-    # Draw Circuits
-    for line in lines:
-        lines_connected = False
-        for other_line in lines:
-            if line != other_line and are_lines_connected(line, other_line):
-                lines_connected = True
-                break
-        if lines_connected:
-            # Draw the line in a different color to indicate connection
-            pygame.draw.line(screen, colors["Green"], line[0], line[1], 3)
-        else:
-            # Draw the line in the default color
-            pygame.draw.line(screen, colors["White"], line[0], line[1], 3)
+    def reflect(self, light, intersection_point):
+        # Calculate the angle of incidence
+        incidence_angle = self.angle - light.angle
 
-    pygame.display.flip()
-    clock.tick(60)
+        # The angle of reflection is equal to the angle of incidence
+        reflection_angle = self.angle + incidence_angle
 
-pygame.quit()
+        # Create a new light ray that represents the reflected light
+        reflected_light = Light(
+            intersection_point, light.screen_size, light.generation + 1
+        )
+        reflected_light.angle = reflection_angle
+
+        return reflected_light
+
+
+class Button:
+    def __init__(self, x, y, width, height, color, text="", click_action=None):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.color = color
+        self.text = text
+        self.click_action = click_action
+
+    def draw(self):
+        if self.is_hovered():
+            pygame.draw.rect(
+                win, BUTTON_OUTLINE, self.rect.inflate(6, 6)
+            )  # Draw outline when hovered
+        pygame.draw.rect(win, self.color, self.rect)
+        if self.text != "":
+            font = pygame.font.Font(None, 32)
+            text = font.render(self.text, True, BLACK)
+            text_rect = text.get_rect(center=self.rect.center)
+            win.blit(text, text_rect)
+
+    def is_hovered(self):
+        return self.rect.collidepoint(pygame.mouse.get_pos())
+
+    def is_clicked(self):
+        return (
+            self.rect.collidepoint(pygame.mouse.get_pos())
+            and pygame.mouse.get_pressed()[0]
+        )
+
+    def click(self):
+        if self.click_action is not None:
+            self.click_action()
+
+
+# Button actions
+def light_button_action():
+    global mode
+    mode = "light"
+    print("Light Mode Activated!")
+
+
+def mirror_button_action():
+    global mode
+    mode = "mirror"
+    print("Mirror Mode!")
+
+
+# Toolbar buttons
+toolbar_buttons = [
+    Button(
+        TOOLBAR_WIDTH // 2 - BUTTON_WIDTH // 2,  # Centered horizontally
+        TOOLBAR_HEIGHT // 6 * 1 - BUTTON_HEIGHT // 2,  # Evenly spaced vertically
+        BUTTON_WIDTH,
+        BUTTON_HEIGHT,
+        BUTTON_BACKGROUND,
+        "Light Mode",
+        light_button_action,
+    ),
+    Button(
+        TOOLBAR_WIDTH // 2 - BUTTON_WIDTH // 2,  # Centered horizontally
+        TOOLBAR_HEIGHT // 6 * 2 - BUTTON_HEIGHT // 2,  # Evenly spaced vertically
+        BUTTON_WIDTH,
+        BUTTON_HEIGHT,
+        BUTTON_BACKGROUND,
+        "Mirror Mode",
+        mirror_button_action,
+    ),
+]
+
+
+def main():
+    global drawing, current_line, mode
+    clock = pygame.time.Clock()
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:  # New event check
+                if event.button == 1:  # 1 is the left mouse button
+                    for button in toolbar_buttons:
+                        if button.is_clicked():
+                            button.click()
+                            break
+                    else:
+                        if mode == "light":
+                            current_line = Light(event.pos, (WIDTH, HEIGHT))
+                        elif mode == "mirror":
+                            current_line = Mirror(event.pos, (WIDTH, HEIGHT))
+            elif event.type == pygame.MOUSEMOTION:
+                if current_line is not None:
+                    dx, dy = (
+                        event.pos[0] - current_line.start_pos[0],
+                        event.pos[1] - current_line.start_pos[1],
+                    )
+                    try:
+                        current_line.update(event.pos)
+                    except:
+                        current_line.length = math.hypot(dx, dy)
+                        current_line.angle = math.atan2(dy, dx)
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:  # Left mouse button
+                    if current_line is not None:
+                        lines.append(current_line)
+                        current_line = None
+
+        # Fill the window
+        win.fill(DRAWING_BACKGROUND)
+
+        # Draw the current line
+        new_lights = []  # List to hold new light rays
+        for line in lines:
+            line.draw(win)
+
+            # Check for intersections between light rays and mirrors
+            if isinstance(line, Light) and line.generation < 5:
+                for mirror in [m for m in lines if isinstance(m, Mirror)]:
+                    intersection_point = intersect(line, mirror)
+                    if intersection_point is not None:
+                        reflected_light = mirror.reflect(line, intersection_point)
+                        new_lights.append(reflected_light)
+                        line.update_end_pos(
+                            intersection_point
+                        )  # Pass intersection point here
+
+        lines.extend(new_lights)
+
+        # Draw the current line
+        if current_line is not None:
+            current_line.draw(win)
+
+        # Draw the toolbar
+        pygame.draw.rect(win, TOOLBAR_BACKGROUND, toolbar_rect)
+
+        # Draw the buttons
+        for button in toolbar_buttons:
+            button.draw()
+
+        pygame.display.flip()
+        clock.tick(60)
+
+
+if __name__ == "__main__":
+    main()

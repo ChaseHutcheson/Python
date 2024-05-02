@@ -4,15 +4,12 @@ import math
 # Define some colors
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
-GREEN = (0, 255, 0)
-RED = (255, 0, 0)
 
 pygame.init()
 
 # Set the width and height of the screen [width, height]
 size = (700, 500)
 screen = pygame.display.set_mode(size)
-
 
 # Loop until the user clicks the close button.
 done = False
@@ -21,63 +18,71 @@ done = False
 clock = pygame.time.Clock()
 
 
-# Functions
-def distance(point1, point2):
-    return math.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
+class Line:
+    def __init__(self, start_pos, screen_size):
+        self.start_pos = start_pos
+        self.screen_size = screen_size
+        self.angle = 0
+        self.length = 0
 
-
-pygame.display.set_caption(
-    str(
-        distance(
-            pygame.mouse.get_pos(),
-            (size[0] / 2, size[1] / 2),
+    def draw(self, surface):
+        end_pos = (
+            self.start_pos[0] + self.length * math.cos(self.angle),
+            self.start_pos[1] + self.length * math.sin(self.angle),
         )
-    )
-)
+        pygame.draw.line(surface, BLACK, self.start_pos, end_pos, 2)
 
-# -------- Main Program Loop -----------
+    def rotate(self, angle):
+        self.angle += angle
+        self.angle %= 2 * math.pi  # Ensure angle remains within [0, 2*pi]
+
+    def is_clicked(self, mouse_pos):
+        end_pos = (
+            self.start_pos[0] + self.length * math.cos(self.angle),
+            self.start_pos[1] + self.length * math.sin(self.angle),
+        )
+        distance_to_start = math.dist(self.start_pos, mouse_pos)
+        distance_to_end = math.dist(end_pos, mouse_pos)
+        return abs(distance_to_start + distance_to_end - self.length) < 5
+
+
+lines = []
+dragging = None
+offset = None
+
 while not done:
-    # --- Main event loop
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             done = True
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left mouse button
+                clicked_line = next(
+                    (line for line in lines if line.is_clicked(event.pos)), None
+                )
+                if clicked_line is not None:
+                    dragging = clicked_line
+                    offset = (
+                        event.pos[0] - dragging.start_pos[0],
+                        event.pos[1] - dragging.start_pos[1],
+                    )
+                else:
+                    line = Line(event.pos, size)
+                    lines.append(line)
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:  # Left mouse button
+                dragging = None
+                offset = None
+        elif event.type == pygame.MOUSEMOTION:
+            if dragging is not None and offset is not None:
+                dragging.rotate(event.rel[0] * 0.01)
 
-    # --- Game logic should go here
-
-    # --- Screen-clearing code goes here
-
-    # Here, we clear the screen to white. Don't put other drawing commands
-    # above this, or they will be erased with this command.
-
-    # If you want a background image, replace this clear with blit'ing the
-    # background image.
     screen.fill(WHITE)
 
-    # --- Drawing code should go here
-    pygame.draw.line(
-        surface=screen,
-        color=BLACK,
-        start_pos=pygame.mouse.get_pos(),
-        end_pos=(size[0] / 2, size[1] / 2),
-        width=2,
-    )
-    pygame.draw.circle(
-        surface=screen, color=RED, center=(size[0] / 2, size[1] / 2), radius=1
-    )
+    for line in lines:
+        line.length = size[0]  # Update the length every frame
+        line.draw(screen)
 
-    # --- Go ahead and update the screen with what we've drawn.
     pygame.display.flip()
-    pygame.display.set_caption(
-        str(
-            distance(
-                pygame.mouse.get_pos(),
-                (size[0] / 2, size[1] / 2),
-            )
-        )
-    )
-
-    # --- Limit to 60 frames per second
     clock.tick(60)
 
-# Close the window and quit.
 pygame.quit()
