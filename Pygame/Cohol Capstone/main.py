@@ -37,15 +37,14 @@ BUTTON_MARGIN = 10
 lines = []
 current_line = None
 
+# Font
+FONT = pygame.font.Font(None, 32)
+
 
 # Utils
 def intersect(line1, line2):
     x1, y1 = line1.start_pos
-    x2, y2 = (
-        line1.end_pos
-        if hasattr(line1, "end_pos") and line1.end_pos
-        else line1.extend_to_edge()
-    )
+    x2, y2 = line1.end_pos if line1.end_pos else line1.extend_to_edge()
     x3, y3 = line2.start_pos
     x4, y4 = line2.end_pos
 
@@ -56,7 +55,9 @@ def intersect(line1, line2):
     t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
     u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
 
-    if 0 <= t <= 1 and 0 <= u:
+    if (
+        0 <= t <= 1 and 0 <= u <= 1
+    ):  # Ensure intersection point is within both line segments
         return x1 + t * (x2 - x1), y1 + t * (y2 - y1)  # Return intersection point
     else:
         return None
@@ -71,6 +72,7 @@ class Light:
         self.angle = 0
         self.length = 0
         self.generation = generation
+        self.reflected = False
 
     def draw(self, surface):
         end_pos = self.end_pos if self.end_pos else self.extend_to_edge()
@@ -87,18 +89,21 @@ class Light:
         return abs(distance_to_start + distance_to_end - self.length) < 5
 
     def extend_to_edge(self):
-        dx = math.cos(self.angle)
-        dy = math.sin(self.angle)
+        delta_x = math.cos(self.angle)
+        delta_y = math.sin(self.angle)
         x = self.start_pos[0]
         y = self.start_pos[1]
         while 0 <= x <= self.screen_size[0] and 0 <= y <= self.screen_size[1]:
-            x += dx
-            y += dy
+            x += delta_x
+            y += delta_y
         return (x, y)
 
     def update_end_pos(self, end_pos, intersection_point=None):
         if intersection_point:
             self.end_pos = intersection_point
+            self.reflected = (
+                True  # Set reflected to True when the light ray is reflected
+            )
         else:
             self.end_pos = end_pos
 
@@ -252,15 +257,25 @@ def main():
             line.draw(win)
 
             # Check for intersections between light rays and mirrors
-            if isinstance(line, Light) and line.generation < 5:
+            if (
+                isinstance(line, Light) and line.generation < 5 and not line.reflected
+            ):  # Add the condition here
+                closest_intersection = None
+                closest_mirror = None
                 for mirror in [m for m in lines if isinstance(m, Mirror)]:
                     intersection_point = intersect(line, mirror)
                     if intersection_point is not None:
-                        reflected_light = mirror.reflect(line, intersection_point)
-                        new_lights.append(reflected_light)
-                        line.update_end_pos(
-                            intersection_point
-                        )  # Pass intersection point here
+                        if closest_intersection is None or math.dist(
+                            line.start_pos, intersection_point
+                        ) < math.dist(line.start_pos, closest_intersection):
+                            closest_intersection = intersection_point
+                            closest_mirror = mirror
+                if closest_intersection is not None:
+                    reflected_light = closest_mirror.reflect(line, closest_intersection)
+                    new_lights.append(reflected_light)
+                    line.update_end_pos(
+                        closest_intersection
+                    )  # Pass intersection point here
 
         lines.extend(new_lights)
 
