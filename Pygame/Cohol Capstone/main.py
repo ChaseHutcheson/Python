@@ -18,20 +18,25 @@ TOOLBAR_BACKGROUND = (70, 70, 70)
 BUTTON_OUTLINE = (100, 100, 100)
 BUTTON_BACKGROUND = (150, 150, 150)
 GRAY = (200, 200, 200)
+MIRROR = (173, 216, 230)
 
 # Toolbar settings
-TOOLBAR_WIDTH = WIDTH // 5
-TOOLBAR_HEIGHT = HEIGHT
-toolbar_rect = pygame.Rect(0, 0, TOOLBAR_WIDTH, TOOLBAR_HEIGHT)
+TOOLBAR_WIDTH = 150
+TOOLBAR_HEIGHT = win.get_height()
+TOOLBAR_X = 0
+TOOLBAR_Y = 0
+
+# Define the size and position of the buttons
+BUTTON_WIDTH = 130
+BUTTON_HEIGHT = 50
+BUTTON_X = (TOOLBAR_WIDTH - BUTTON_WIDTH) / 2
 
 # Drawing settings
 drawing = False
 mode = "light"
 
-# Button settings
-BUTTON_WIDTH = TOOLBAR_WIDTH // 1.2
-BUTTON_HEIGHT = 50
-BUTTON_MARGIN = 10
+# Create a font object
+font = pygame.font.Font(None, 24)
 
 # Global variables
 lines = []
@@ -40,67 +45,121 @@ current_line = None
 
 # Utils
 def intersect(line1, line2):
-    x1, y1 = line1.start_pos
-    x2, y2 = (
-        line1.end_pos
-        if hasattr(line1, "end_pos") and line1.end_pos
-        else line1.extend_to_edge()
-    )
-    x3, y3 = line2.start_pos
-    x4, y4 = line2.end_pos
+    if isinstance(line1, Light):
+        x1, y1 = line1.start_pos
+        x2, y2 = line1.end_pos
+    elif isinstance(line1, Mirror):
+        x1, y1 = line1.start_pos
+        x2, y2 = line1.end_pos
 
-    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    if denom == 0:
-        return None  # Lines are parallel
+    if isinstance(line2, Light):
+        x3, y3 = line2.start_pos
+        x4, y4 = line2.end_pos
+    elif isinstance(line2, Mirror):
+        x3, y3 = line2.start_pos
+        x4, y4 = line2.end_pos
 
-    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
-    u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
+    # Calculate the denominators of the equations
+    den1 = (x1 - x2) * (y3 - y4)
+    den2 = (y1 - y2) * (x3 - x4)
+    denominator = den1 - den2
 
-    if 0 <= t <= 1 and 0 <= u:
-        return x1 + t * (x2 - x1), y1 + t * (y2 - y1)  # Return intersection point
-    else:
+    # If the denominator is 0, the lines are parallel and don't intersect
+    if denominator == 0:
         return None
+
+    # Calculate the numerators of the equations
+    num1 = x1 * y2 - y1 * x2
+    num2 = x3 * y4 - y3 * x4
+    numerator_x = num1 * (x3 - x4) - (x1 - x2) * num2
+    numerator_y = num1 * (y3 - y4) - (y1 - y2) * num2
+
+    # Calculate the intersection point
+    x = numerator_x / denominator
+    y = numerator_y / denominator
+
+    # Check if the intersection point is within the bounds of both lines
+    if (
+        min(x1, x2) <= x <= max(x1, x2)
+        and min(y1, y2) <= y <= max(y1, y2)
+        and min(x3, x4) <= x <= max(x3, x4)
+        and min(y3, y4) <= y <= max(y3, y4)
+    ):
+        return (x, y)
+
+    return None
+
+
+def check_intersections_and_reflect(lines, mirrors):
+    new_lines = []
+    for line in lines:
+        for mirror in mirrors:
+            intersection_point = intersect(line, mirror)
+            if intersection_point is not None:
+                mirror.reflect(line, new_lines)
+                line.update(intersection_point)
+    lines.extend(new_lines)
 
 
 # Classes
 class Light:
-    def __init__(self, start_pos, screen_size, generation=0):
+    def __init__(self, start_pos, end_pos):
         self.start_pos = start_pos
-        self.end_pos = None
-        self.screen_size = screen_size
-        self.angle = 0
-        self.length = 0
-        self.generation = generation
+        self.end_pos = end_pos
+        self.dx = self.end_pos[0] - self.start_pos[0]
+        self.dy = self.end_pos[1] - self.start_pos[1]
+        self.length = math.hypot(self.dx, self.dy)
+        self.angle = math.atan2(self.dy, self.dx)
 
     def draw(self, surface):
-        end_pos = self.end_pos if self.end_pos else self.extend_to_edge()
-        pygame.draw.line(surface, YELLOW, self.start_pos, end_pos, 2)
+        pygame.draw.line(surface, (255, 255, 255), self.start_pos, self.end_pos, 2)
 
-    def rotate(self, angle):
-        self.angle += angle
-        self.angle %= 2 * math.pi  # Ensure angle remains within [0, 2*pi]
+    def calculate_extended_points(self, screen_size):
+        dx = self.end_pos[0] - self.start_pos[0]
+        dy = self.end_pos[1] - self.start_pos[1]
 
-    def is_clicked(self, mouse_pos):
-        end_pos = self.extend_to_edge()
-        distance_to_start = math.dist(self.start_pos, mouse_pos)
-        distance_to_end = math.dist(end_pos, mouse_pos)
-        return abs(distance_to_start + distance_to_end - self.length) < 5
+        if dx != 0:
+            slope = dy / dx
+            y_intercept = self.start_pos[1] - slope * self.start_pos[0]
 
-    def extend_to_edge(self):
-        dx = math.cos(self.angle)
-        dy = math.sin(self.angle)
-        x = self.start_pos[0]
-        y = self.start_pos[1]
-        while 0 <= x <= self.screen_size[0] and 0 <= y <= self.screen_size[1]:
-            x += dx
-            y += dy
-        return (x, y)
+            # Calculate new x and y for the left and right edges of the screen
+            x_left = 0
+            y_left = y_intercept
 
-    def update_end_pos(self, end_pos, intersection_point=None):
-        if intersection_point:
-            self.end_pos = intersection_point
+            x_right = screen_size[0]
+            y_right = slope * x_right + y_intercept
+
+            # Check if the line intersects with the top or bottom before it hits the left or right
+            y_top = 0
+            x_top = (y_top - y_intercept) / slope if slope != 0 else self.start_pos[0]
+
+            y_bottom = screen_size[1]
+            x_bottom = (
+                (y_bottom - y_intercept) / slope if slope != 0 else self.start_pos[0]
+            )
+
+            new_points = [
+                (x_left, y_left),
+                (x_right, y_right),
+                (x_top, y_top),
+                (x_bottom, y_bottom),
+            ]
+            new_points = [
+                (x, y)
+                for x, y in new_points
+                if 0 <= x <= screen_size[0] and 0 <= y <= screen_size[1]
+            ]
+            new_points.sort(
+                key=lambda point: (point[0] - self.start_pos[0]) ** 2
+                + (point[1] - self.start_pos[1]) ** 2
+            )
+
+            return new_points[0], new_points[-1]
         else:
-            self.end_pos = end_pos
+            return (self.start_pos[0], 0), (self.start_pos[0], screen_size[1])
+
+    def update(self, end_pos):
+        self.end_pos = end_pos
 
 
 class Mirror:
@@ -120,22 +179,32 @@ class Mirror:
         self.angle = math.atan2(self.dy, self.dx)
 
     def draw(self, surface):
-        pygame.draw.line(surface, GRAY, self.start_pos, self.end_pos, 10)
+        pygame.draw.line(surface, MIRROR, self.start_pos, self.end_pos, 5)
 
-    def reflect(self, light, intersection_point):
+    def reflect(self, light, new_lines):
         # Calculate the angle of incidence
-        incidence_angle = self.angle - light.angle
+        incidence_angle = light.angle - self.angle
 
-        # The angle of reflection is equal to the angle of incidence
-        reflection_angle = self.angle + incidence_angle
+        # Calculate the angle of reflection
+        reflection_angle = self.angle - incidence_angle
 
-        # Create a new light ray that represents the reflected light
-        reflected_light = Light(
-            intersection_point, light.screen_size, light.generation + 1
-        )
-        reflected_light.angle = reflection_angle
+        # Calculate the new direction of the light
+        dx = math.cos(reflection_angle)
+        dy = math.sin(reflection_angle)
 
-        return reflected_light
+        # Calculate the intersection point
+        intersection_point = intersect(light, self)
+
+        # Create a new light ray starting from the intersection point and add it to the new_lines list
+        if intersection_point is not None and light.start_pos != intersection_point:
+            new_light = Light(
+                intersection_point,
+                (
+                    intersection_point[0] + dx * light.length,
+                    intersection_point[1] + dy * light.length,
+                ),
+            )
+            new_lines.append(new_light)
 
 
 class Button:
@@ -187,8 +256,8 @@ def mirror_button_action():
 # Toolbar buttons
 toolbar_buttons = [
     Button(
-        TOOLBAR_WIDTH // 2 - BUTTON_WIDTH // 2,  # Centered horizontally
-        TOOLBAR_HEIGHT // 6 * 1 - BUTTON_HEIGHT // 2,  # Evenly spaced vertically
+        BUTTON_X,  # Centered horizontally
+        HEIGHT // 6 * 1 - BUTTON_HEIGHT // 2,  # Evenly spaced vertically
         BUTTON_WIDTH,
         BUTTON_HEIGHT,
         BUTTON_BACKGROUND,
@@ -196,8 +265,8 @@ toolbar_buttons = [
         light_button_action,
     ),
     Button(
-        TOOLBAR_WIDTH // 2 - BUTTON_WIDTH // 2,  # Centered horizontally
-        TOOLBAR_HEIGHT // 6 * 2 - BUTTON_HEIGHT // 2,  # Evenly spaced vertically
+        BUTTON_X,  # Centered horizontally
+        HEIGHT // 6 * 2 - BUTTON_HEIGHT // 2,  # Evenly spaced vertically
         BUTTON_WIDTH,
         BUTTON_HEIGHT,
         BUTTON_BACKGROUND,
@@ -206,77 +275,95 @@ toolbar_buttons = [
     ),
 ]
 
+lines = []
+current_line = None
+
 
 def main():
-    global drawing, current_line, mode
-    clock = pygame.time.Clock()
+    global lines, current_line
+    pygame.init()
+
+    screen_size = win.get_size()
+
+    mirrors = []
+    new_lines = []
+
+    # Game loop
     while True:
+        check_intersections_and_reflect(lines, mirrors)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            elif event.type == pygame.MOUSEBUTTONDOWN:  # New event check
+            elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # 1 is the left mouse button
-                    for button in toolbar_buttons:
-                        if button.is_clicked():
-                            button.click()
-                            break
-                    else:
+                    mouse_pos = pygame.mouse.get_pos()
+                    if not (
+                        TOOLBAR_X <= mouse_pos[0] <= TOOLBAR_X + TOOLBAR_WIDTH
+                        and TOOLBAR_Y <= mouse_pos[1] <= TOOLBAR_Y + TOOLBAR_HEIGHT
+                    ):
+                        # Mouse is within toolbar area
                         if mode == "light":
-                            current_line = Light(event.pos, (WIDTH, HEIGHT))
+                            if (
+                                current_line is None
+                            ):  # If no line is currently being drawn
+                                current_line = Light(event.pos, event.pos)
+                            else:  # If a line is currently being drawn
+                                current_line.end = event.pos
+                                extended_start, extended_end = (
+                                    current_line.calculate_extended_points(screen_size)
+                                )
+                                extended_line = Light(extended_start, extended_end)
+                                lines.append(extended_line)
+                                current_line = None
                         elif mode == "mirror":
-                            current_line = Mirror(event.pos, (WIDTH, HEIGHT))
+                            if (
+                                current_line is None
+                            ):  # If no mirror is currently being drawn
+                                current_line = Mirror(event.pos, event.pos)
+                            else:  # If a mirror is currently being drawn
+                                current_line.update(event.pos)
+                                mirrors.append(current_line)
+                                current_line = None
+                    else:
+                        # Mouse is within button area
+                        for button in toolbar_buttons:
+                            if button.is_clicked():
+                                button.click()
             elif event.type == pygame.MOUSEMOTION:
-                if current_line is not None:
-                    dx, dy = (
-                        event.pos[0] - current_line.start_pos[0],
-                        event.pos[1] - current_line.start_pos[1],
-                    )
-                    try:
-                        current_line.update(event.pos)
-                    except:
-                        current_line.length = math.hypot(dx, dy)
-                        current_line.angle = math.atan2(dy, dx)
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:  # Left mouse button
-                    if current_line is not None:
-                        lines.append(current_line)
-                        current_line = None
+                if (
+                    current_line is not None
+                ):  # If a line or mirror is currently being drawn
+                    current_line.update(event.pos)
 
-        # Fill the window
-        win.fill(DRAWING_BACKGROUND)
+        # Fill the win with a color
+        win.fill((0, 0, 0))
 
-        # Draw the current line
-        new_lights = []  # List to hold new light rays
+        # Draw all lines
         for line in lines:
             line.draw(win)
 
-            # Check for intersections between light rays and mirrors
-            if isinstance(line, Light) and line.generation < 5:
-                for mirror in [m for m in lines if isinstance(m, Mirror)]:
-                    intersection_point = intersect(line, mirror)
-                    if intersection_point is not None:
-                        reflected_light = mirror.reflect(line, intersection_point)
-                        new_lights.append(reflected_light)
-                        line.update_end_pos(
-                            intersection_point
-                        )  # Pass intersection point here
+        for line in new_lines:
+            line.draw(win)
 
-        lines.extend(new_lights)
-
-        # Draw the current line
         if current_line is not None:
             current_line.draw(win)
 
+        # Draw all mirrors
+        for mirror in mirrors:
+            mirror.draw(win)
+
         # Draw the toolbar
-        pygame.draw.rect(win, TOOLBAR_BACKGROUND, toolbar_rect)
+        pygame.draw.rect(
+            win, GRAY, (TOOLBAR_X, TOOLBAR_Y, TOOLBAR_WIDTH, TOOLBAR_HEIGHT)
+        )
 
         # Draw the buttons
         for button in toolbar_buttons:
             button.draw()
 
+        # Update the display
         pygame.display.flip()
-        clock.tick(60)
 
 
 if __name__ == "__main__":

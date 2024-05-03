@@ -1,88 +1,103 @@
 import pygame
-import math
+import sys
 
-# Define some colors
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-
-pygame.init()
-
-# Set the width and height of the screen [width, height]
-size = (700, 500)
-screen = pygame.display.set_mode(size)
-
-# Loop until the user clicks the close button.
-done = False
-
-# Used to manage how fast the screen updates
-clock = pygame.time.Clock()
+lines = []
+current_line = None
 
 
 class Line:
-    def __init__(self, start_pos, screen_size):
-        self.start_pos = start_pos
-        self.screen_size = screen_size
-        self.angle = 0
-        self.length = 0
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
 
     def draw(self, surface):
-        end_pos = (
-            self.start_pos[0] + self.length * math.cos(self.angle),
-            self.start_pos[1] + self.length * math.sin(self.angle),
-        )
-        pygame.draw.line(surface, BLACK, self.start_pos, end_pos, 2)
+        pygame.draw.line(surface, (255, 255, 255), self.start, self.end, 2)
 
-    def rotate(self, angle):
-        self.angle += angle
-        self.angle %= 2 * math.pi  # Ensure angle remains within [0, 2*pi]
+    def calculate_extended_points(self, screen_size):
+        dx = self.end[0] - self.start[0]
+        dy = self.end[1] - self.start[1]
 
-    def is_clicked(self, mouse_pos):
-        end_pos = (
-            self.start_pos[0] + self.length * math.cos(self.angle),
-            self.start_pos[1] + self.length * math.sin(self.angle),
-        )
-        distance_to_start = math.dist(self.start_pos, mouse_pos)
-        distance_to_end = math.dist(end_pos, mouse_pos)
-        return abs(distance_to_start + distance_to_end - self.length) < 5
+        if dx != 0:
+            slope = dy / dx
+            y_intercept = self.start[1] - slope * self.start[0]
+
+            # Calculate new x and y for the left and right edges of the screen
+            x_left = 0
+            y_left = y_intercept
+
+            x_right = screen_size[0]
+            y_right = slope * x_right + y_intercept
+
+            # Check if the line intersects with the top or bottom before it hits the left or right
+            y_top = 0
+            x_top = (y_top - y_intercept) / slope if slope != 0 else self.start[0]
+
+            y_bottom = screen_size[1]
+            x_bottom = (y_bottom - y_intercept) / slope if slope != 0 else self.start[0]
+
+            new_points = [
+                (x_left, y_left),
+                (x_right, y_right),
+                (x_top, y_top),
+                (x_bottom, y_bottom),
+            ]
+            new_points = [
+                (x, y)
+                for x, y in new_points
+                if 0 <= x <= screen_size[0] and 0 <= y <= screen_size[1]
+            ]
+            new_points.sort(
+                key=lambda point: (point[0] - self.start[0]) ** 2
+                + (point[1] - self.start[1]) ** 2
+            )
+
+            return new_points[0], new_points[-1]
+        else:
+            return (self.start[0], 0), (self.start[0], screen_size[1])
 
 
-lines = []
-dragging = None
-offset = None
+def main():
+    global lines, current_line
+    pygame.init()
 
-while not done:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            done = True
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:  # Left mouse button
-                clicked_line = next(
-                    (line for line in lines if line.is_clicked(event.pos)), None
-                )
-                if clicked_line is not None:
-                    dragging = clicked_line
-                    offset = (
-                        event.pos[0] - dragging.start_pos[0],
-                        event.pos[1] - dragging.start_pos[1],
-                    )
-                else:
-                    line = Line(event.pos, size)
-                    lines.append(line)
-        elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1:  # Left mouse button
-                dragging = None
-                offset = None
-        elif event.type == pygame.MOUSEMOTION:
-            if dragging is not None and offset is not None:
-                dragging.rotate(event.rel[0] * 0.01)
+    # Set the dimensions of the window
+    screen = pygame.display.set_mode((800, 600))
+    screen_size = screen.get_size()
 
-    screen.fill(WHITE)
+    # Game loop
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # 1 is the left mouse button
+                    if current_line is None:  # If no line is currently being drawn
+                        current_line = Line(event.pos, event.pos)
+                    else:  # If a line is currently being drawn
+                        current_line.end = event.pos
+                        extended_start, extended_end = (
+                            current_line.calculate_extended_points(screen_size)
+                        )
+                        extended_line = Line(extended_start, extended_end)
+                        lines.append(extended_line)
+                        current_line = None
+            elif event.type == pygame.MOUSEMOTION:
+                if current_line is not None:  # If a line is currently being drawn
+                    current_line.end = event.pos
 
-    for line in lines:
-        line.length = size[0]  # Update the length every frame
-        line.draw(screen)
+        # Fill the screen with a color
+        screen.fill((0, 0, 0))
 
-    pygame.display.flip()
-    clock.tick(60)
+        # Draw all lines
+        for line in lines:
+            line.draw(screen)
+        if current_line is not None:
+            current_line.draw(screen)
 
-pygame.quit()
+        # Update the display
+        pygame.display.flip()
+
+
+if __name__ == "__main__":
+    main()
