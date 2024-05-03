@@ -42,6 +42,9 @@ font = pygame.font.Font(None, 24)
 lines = []
 current_line = None
 
+# Font
+FONT = pygame.font.Font(None, 32)
+
 
 # Utils
 def intersect(line1, line2):
